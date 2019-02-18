@@ -2,10 +2,12 @@ package com.xxl.job.admin.service.impl;
 
 import com.xxl.job.admin.core.model.XxlJobInfo;
 import com.xxl.job.admin.core.model.XxlJobLog;
+import com.xxl.job.admin.core.thread.JobTriggerPoolHelper;
+import com.xxl.job.admin.core.trigger.TriggerTypeEnum;
+import com.xxl.job.admin.core.util.I18nUtil;
 import com.xxl.job.admin.dao.XxlJobInfoDao;
 import com.xxl.job.admin.dao.XxlJobLogDao;
 import com.xxl.job.admin.dao.XxlJobRegistryDao;
-import com.xxl.job.admin.service.XxlJobService;
 import com.xxl.job.core.biz.AdminBiz;
 import com.xxl.job.core.biz.model.HandleCallbackParam;
 import com.xxl.job.core.biz.model.RegistryParam;
@@ -34,8 +36,6 @@ public class AdminBizImpl implements AdminBiz {
     private XxlJobInfoDao xxlJobInfoDao;
     @Resource
     private XxlJobRegistryDao xxlJobRegistryDao;
-    @Resource
-    private XxlJobService xxlJobService;
 
 
     @Override
@@ -64,30 +64,32 @@ public class AdminBizImpl implements AdminBiz {
         if (IJobHandler.SUCCESS.getCode() == handleCallbackParam.getExecuteResult().getCode()) {
             XxlJobInfo xxlJobInfo = xxlJobInfoDao.loadById(log.getJobId());
             if (xxlJobInfo!=null && StringUtils.isNotBlank(xxlJobInfo.getChildJobId())) {
-                callbackMsg = "<br><br><span style=\"color:#00c0ef;\" > >>>>>>>>>>>触发子任务<<<<<<<<<<< </span><br>";
+                callbackMsg = "<br><br><span style=\"color:#00c0ef;\" > >>>>>>>>>>>"+ I18nUtil.getString("jobconf_trigger_child_run") +"<<<<<<<<<<< </span><br>";
 
                 String[] childJobIds = xxlJobInfo.getChildJobId().split(",");
                 for (int i = 0; i < childJobIds.length; i++) {
                     int childJobId = (StringUtils.isNotBlank(childJobIds[i]) && StringUtils.isNumeric(childJobIds[i]))?Integer.valueOf(childJobIds[i]):-1;
                     if (childJobId > 0) {
-                        ReturnT<String> triggerChildResult = xxlJobService.triggerJob(childJobId);
+
+                        JobTriggerPoolHelper.trigger(childJobId, TriggerTypeEnum.PARENT, -1, null, null);
+                        ReturnT<String> triggerChildResult = ReturnT.SUCCESS;
 
                         // add msg
-                        callbackMsg += MessageFormat.format("{0}/{1} [任务ID={2}], 触发{3}, 触发备注: {4} <br>",
-                                (i+1), childJobIds.length, childJobIds[i], (triggerChildResult.getCode()==ReturnT.SUCCESS_CODE?"成功":"失败"), triggerChildResult.getMsg());
+                        callbackMsg += MessageFormat.format(I18nUtil.getString("jobconf_callback_child_msg1"),
+                                (i+1),
+                                childJobIds.length,
+                                childJobIds[i],
+                                (triggerChildResult.getCode()==ReturnT.SUCCESS_CODE?I18nUtil.getString("system_success"):I18nUtil.getString("system_fail")),
+                                triggerChildResult.getMsg());
                     } else {
-                        callbackMsg += MessageFormat.format(" {0}/{1} [任务ID={2}], 触发失败, 触发备注: 任务ID格式错误 <br>",
-                                (i+1), childJobIds.length, childJobIds[i]);
+                        callbackMsg += MessageFormat.format(I18nUtil.getString("jobconf_callback_child_msg2"),
+                                (i+1),
+                                childJobIds.length,
+                                childJobIds[i]);
                     }
                 }
 
             }
-        } else if (IJobHandler.FAIL_RETRY.getCode() == handleCallbackParam.getExecuteResult().getCode()){
-            ReturnT<String> retryTriggerResult = xxlJobService.triggerJob(log.getJobId());
-            callbackMsg = "<br><br><span style=\"color:#F39C12;\" > >>>>>>>>>>>执行失败重试<<<<<<<<<<< </span><br>";
-
-            callbackMsg += MessageFormat.format("触发{0}, 触发备注: {1}",
-                   (retryTriggerResult.getCode()==ReturnT.SUCCESS_CODE?"成功":"失败"), retryTriggerResult.getMsg());
         }
 
         // handle msg
@@ -124,11 +126,6 @@ public class AdminBizImpl implements AdminBiz {
     public ReturnT<String> registryRemove(RegistryParam registryParam) {
         xxlJobRegistryDao.registryDelete(registryParam.getRegistGroup(), registryParam.getRegistryKey(), registryParam.getRegistryValue());
         return ReturnT.SUCCESS;
-    }
-
-    @Override
-    public ReturnT<String> triggerJob(int jobId) {
-        return xxlJobService.triggerJob(jobId);
     }
 
 }
